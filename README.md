@@ -1,5 +1,4 @@
-# -Automated-SQL-Analytics-Assistant
-
+# 🚀 Automated SQL Analytics Assistant
 An AI-powered business intelligence web application that democratizes data analysis. This tool allows non-technical users to query a relational database using natural, everyday English. The system translates the text into optimized SQL, executes it safely, and automatically renders the results into interactive dashboards and downloadable reports.
 
 ## 🌟 Key Features
