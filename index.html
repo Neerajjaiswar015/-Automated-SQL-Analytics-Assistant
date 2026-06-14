@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SQL Analytics Assistant</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="bg-[#FDFBF7] min-h-screen text-gray-800 font-sans">
+
+    <div class="max-w-5xl mx-auto py-10 px-4">
+        <div class="mb-8 text-center">
+            <h1 class="text-3xl font-bold text-gray-900">Automated SQL Analytics Assistant</h1>
+            <p class="text-gray-600 mt-2">Query your Cloud Kitchen network database using natural everyday English.</p>
+        </div>
+
+        <div class="bg-[#FFFDFB] p-6 rounded-xl shadow-xs border border-gray-200 mb-8">
+            <div class="flex gap-3">
+                <input type="text" id="userQuestion" 
+                       placeholder="e.g., Show total order value per delivery location" 
+                       class="flex-1 px-4 py-3 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <button id="analyzeBtn" onclick="askAssistant()" 
+                        class="bg-blue-600 hover:bg-blue-700 text-white font-medium px-6 py-3 rounded-lg transition duration-200 flex items-center justify-center min-w-[140px]">
+                    Analyze Data
+                </button>
+            </div>
+        </div>
+
+        <div id="loadingIndicator" class="hidden flex-col items-center justify-center py-12">
+            <div class="animate-spin rounded-full h-10 w-10 border-4 border-blue-600 border-t-transparent mb-4"></div>
+            <p class="text-gray-600 font-medium animate-pulse">Running AI Model & Executing SQL...</p>
+        </div>
+
+        <div id="outputDashboard" class="hidden space-y-6">
+            
+            <div class="bg-gray-900 text-gray-100 p-5 rounded-xl font-mono text-sm shadow-xs">
+                <span class="text-emerald-400 font-bold block mb-1">Generated SQL Query:</span>
+                <p id="sqlQueryText" class="whitespace-pre-wrap"></p>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div class="bg-[#FFFDFB] p-6 rounded-xl shadow-xs border border-gray-200 overflow-x-auto">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-lg font-bold text-gray-900">Result Data</h3>
+                        <button onclick="downloadCSV()" class="text-xs bg-white hover:bg-gray-50 border border-gray-300 px-3 py-1.5 rounded-lg font-medium transition duration-200 shadow-sm flex items-center gap-1.5 text-gray-700">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                            Export CSV
+                        </button>
+                    </div>
+                    <table class="w-full text-left border-collapse" id="dataTable">
+                        <thead><tr id="tableHeader" class="border-b border-gray-200 text-gray-500 font-semibold text-sm"></tr></thead>
+                        <tbody id="tableBody" class="divide-y divide-gray-100 text-sm"></tbody>
+                    </table>
+                </div>
+
+                <div class="bg-[#FFFDFB] p-6 rounded-xl shadow-xs border border-gray-200 flex flex-col justify-center">
+                    <h3 class="text-lg font-bold mb-4 text-gray-900">Automated Visualization</h3>
+                    <div class="relative w-full h-64 flex items-center justify-center">
+                        <canvas id="analyticsChart"></canvas>
+                        <p id="noChartText" class="text-gray-400 text-sm hidden">This data shape doesn't require a visual graph.</p>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        let activeChart = null;
+
+        async function askAssistant() {
+            const question = document.getElementById('userQuestion').value;
+            if(!question) return;
+
+            // Fetch elements
+            const dashboard = document.getElementById('outputDashboard');
+            const loading = document.getElementById('loadingIndicator');
+            const analyzeBtn = document.getElementById('analyzeBtn');
+            const sqlText = document.getElementById('sqlQueryText');
+            const th = document.getElementById('tableHeader');
+            const tb = document.getElementById('tableBody');
+            const noChartText = document.getElementById('noChartText');
+            const chartCanvas = document.getElementById('analyticsChart');
+
+            // UI State: Show loading, hide dashboard, disable button
+            dashboard.classList.add('hidden');
+            loading.classList.remove('hidden');
+            loading.classList.add('flex');
+            analyzeBtn.disabled = true;
+            analyzeBtn.classList.add('opacity-70', 'cursor-not-allowed');
+            analyzeBtn.innerText = "Working...";
+
+            try {
+                const response = await fetch('/get_analytics', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ question: question })
+                });
+                
+                const result = await response.json();
+                
+                if (result.error) {
+                    alert("Error: " + result.error);
+                    if(result.sql) {
+                        dashboard.classList.remove('hidden');
+                        sqlText.innerText = result.sql;
+                    }
+                    return;
+                }
+
+                // Display Dashboard
+                dashboard.classList.remove('hidden');
+                sqlText.innerText = result.sql;
+
+                // Build Table Headers
+                th.innerHTML = '';
+                result.columns.forEach(col => {
+                    th.innerHTML += `<th class="pb-3 pr-4">${col}</th>`;
+                });
+
+                // Build Table Body Rows
+                tb.innerHTML = '';
+                result.table_data.forEach(row => {
+                    let rowHtml = '<tr>';
+                    result.columns.forEach(col => {
+                        rowHtml += `<td class="py-3 pr-4 font-medium">${row[col] ?? 'NULL'}</td>`;
+                    });
+                    rowHtml += '</tr>';
+                    tb.innerHTML += rowHtml;
+                });
+
+                // Handle Visualization Engine
+                if(activeChart) activeChart.destroy(); // Clear old instance
+                
+                if(result.chart_type === 'none') {
+                    chartCanvas.style.display = 'none';
+                    noChartText.classList.remove('hidden');
+                } else {
+                    noChartText.classList.add('hidden');
+                    chartCanvas.style.display = 'block';
+                    
+                    activeChart = new Chart(chartCanvas.getContext('2d'), {
+                        type: result.chart_type,
+                        data: {
+                            labels: result.chart_labels,
+                            datasets: [{
+                                label: 'Metrics Distribution',
+                                data: result.chart_values,
+                                backgroundColor: 'rgba(59, 130, 246, 0.7)',
+                                borderColor: 'rgba(37, 99, 235, 1)',
+                                borderWidth: 1,
+                                borderRadius: 4
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: { legend: { display: false } }
+                        }
+                    });
+                }
+
+            } catch(err) {
+                alert("Pipeline execution failed: " + err.message);
+            } finally {
+                // UI State: Hide loading, reset button regardless of success/fail
+                loading.classList.add('hidden');
+                loading.classList.remove('flex');
+                analyzeBtn.disabled = false;
+                analyzeBtn.classList.remove('opacity-70', 'cursor-not-allowed');
+                analyzeBtn.innerText = "Analyze Data";
+            }
+        }
+
+        // Phase 8: CSV Export Function
+        function downloadCSV() {
+            const table = document.getElementById("dataTable");
+            if (!table || table.rows.length === 0) {
+                alert("No data available to export.");
+                return;
+            }
+
+            let csvContent = "";
+            
+            // Get Headers
+            const headers = Array.from(document.querySelectorAll("#tableHeader th"))
+                                 .map(th => `"${th.innerText}"`).join(",");
+            csvContent += headers + "\n";
+
+            // Get Rows
+            const rows = document.querySelectorAll("#tableBody tr");
+            rows.forEach(row => {
+                const cols = row.querySelectorAll("td");
+                const rowData = Array.from(cols).map(c => `"${c.innerText}"`).join(",");
+                csvContent += rowData + "\n";
+            });
+            
+            // Generate Download
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = window.URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.setAttribute('href', url);
+            link.setAttribute('download', 'kitchen_analytics_report.csv');
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+    </script>
+</body>
+</html> 
